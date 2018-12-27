@@ -1,2 +1,4 @@
 __pycache__/
 py36_spectral/
+sound_files/
+*.csv
