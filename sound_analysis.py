@@ -10,6 +10,7 @@ SPECTRUM_CSV_DEST = "../../C++/stk_adaptive_synth/src/synth_files/"
 parser = argparse.ArgumentParser()
 parser.add_argument("--spectro", "-sp", action="store_true", help="Spectrogram")
 parser.add_argument("--load_file", "-lf", type=str,default=None, help="Name of wav file to analyze")
+parser.add_argument("--load_dir", "-ld", type=str,default=None, help="Name of directory of wav file(s)")
 parser.add_argument("--peaks", "-p", action="store_true", help="Peak detection on spectrogram (Outdated?)")
 parser.add_argument("--harm", "-hr", action="store_true", help="Get harmonics from sound file")
 parser.add_argument("--adsr",action="store_true", help="Estimate time ranges for Attack,Sustain and Release")
@@ -55,6 +56,22 @@ def main():
 			print(attack)
 			print(sustain)
 			print(release)
+		else:
+			if(args.load_dir != None):
+				filepath = glob.glob(args.load_dir+'/*.wav')
+				print(glob.glob(args.load_dir))
+				if(len(filepath) == 0): raise ValueError('No .wav files found from '+args.load_dir)
+				for file in filepath:
+					try:
+						S,freqs,sr = utils.spectrogram(file,librosa_=True,mel=False,plot=args.plot)
+						attack,sustain,release=utils.get_adsr(S,freqs,sr,filename=file,plot=args.plot)
+						print('Attack: ', attack)
+						print('Sustain: ',sustain)
+						print('Release: ',release)
+					except KeyboardInterrupt:
+						raise KeyboardInterrupt("Ctrl+c pressed!")
+					except Exception as e:
+						print(e)
 
 if __name__ == '__main__':
 	main()

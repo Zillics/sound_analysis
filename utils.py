@@ -143,7 +143,7 @@ def get_harmonics(S,freqs,plot=True):
 # TODO:
 # 1. Output ranges of A and D separately
 # 2. Output fourth range between current release start and when curve starts to stabilize
-def get_adsr(S,freqs,sr_,plot=True):
+def get_adsr(S,freqs,sr_,filename='File?',plot=True):
 	D_harmonic, D_percussive = librosa.decompose.hpss(S)
 	means = np.mean(D_harmonic,axis=0)
 	grad = np.gradient(means)
@@ -161,7 +161,7 @@ def get_adsr(S,freqs,sr_,plot=True):
 	p3 = p2 + np.argmin(grad[p2:])
 	# If lowest peak has lower variance than total variance -> release starts after attack.
 	# If p2 is lowest point after attack -> release starts after attack
-	if((rol_var.values[p3] <= grad_var) or (p2==p3)):
+	if(p2==p3):
 		attack = (0,p2)
 		sustain = (p2,p2) # No sustain
 		release = (p2,grad.shape[0])
@@ -175,7 +175,7 @@ def get_adsr(S,freqs,sr_,plot=True):
 	
 	if(plot):
 		rp = np.max(np.abs(D_harmonic))
-		plt.figure(figsize=(20,15))
+		fig = plt.figure(figsize=(20,15))
 		ax1 = plt.subplot(3, 1, 1)
 		plt.title("Spectrogram (log scale)")
 		librosa.display.specshow(librosa.amplitude_to_db(D_harmonic, ref=rp), y_axis='log')
@@ -185,7 +185,7 @@ def get_adsr(S,freqs,sr_,plot=True):
 		plt.scatter(p1,grad[p1],color='r',label='p1')
 		plt.scatter(p2,grad[p2],color='g',label='p2')
 		plt.scatter(p3,grad[p3],color='black',label='p3')
-		if( not ((rol_var.values[p3] <= grad_var) or (p2==p3))):
+		if( not (p2==p3)):
 			plt.scatter(p4,grad[p4],color='b',label='p4')
 			plt.vlines(attack[1],grad.min(),grad.max(),label='attack end/sustain start',color='b',linestyle='--')
 			plt.vlines(sustain[1],grad.min(),grad.max(),label='sustain end/release start',color='r',linestyle='--')
@@ -202,5 +202,6 @@ def get_adsr(S,freqs,sr_,plot=True):
 		plt.ylabel('Variance of upper gradient')
 		plt.legend()
 		plt.axis('tight')
+		fig.suptitle('ADSR envelope estimated for '+filename)
 		plt.show()
 	return attack,sustain,release
