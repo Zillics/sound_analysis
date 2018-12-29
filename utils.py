@@ -143,43 +143,61 @@ def get_adsr(S,freqs,sr_,plot=True):
 	print(D_harmonic.shape)
 	means = np.mean(D_harmonic,axis=0)
 	grad = np.gradient(means)
+	# Total variance and rolling variance
+	grad_var = np.var(grad)
+	df = pd.DataFrame(data=grad)
+	rol_var = df.rolling(window=10).var()[0]
 	# Find first peak of gradient
 	p1 = np.argmax(grad)
-	# Find lowest peak of gradient
-	p2 = np.argmin(grad)
 	# Find where the curve changes direction after p1
-	p3 = p1 + np.argmax(grad[p1:p2] <= 0)
-	# Find where the curve changes direction after p2
-	p4 = p2 - np.argmax(np.flip(grad[p1:p2]) >= 0)
-	# Determine whether it has Sustain or Release
-
-	grad_2 = np.gradient(grad)
-	grad_3 = np.gradient(grad_2)
-	grad_4 = np.gradient(grad_3)
-	peak_idx,_ = find_peaks(grad_3)
-
-	df = pd.DataFrame(data=grad)
-	rol_mean = df.rolling(window=10).mean()
-	rol_mean_g = rol_mean.diff()
-	rol_var = df.rolling(window=10).mean()
+	p2_ = p1 + np.argmax(grad[p1:] <= 0)
+	# Find where the rolling variance decreases to total variance
+	p2 = p2_ + np.argmax(rol_var[p2_:].values <= grad_var)
+	# Find lowest peak of gradient
+	p3 = p2 + np.argmin(grad[p2:])
+	#if(p2==p3): raise ValueError("p2==p3 TODO: make decision based on this")
+	# If lowest peak has lower variance than total variance -> release starts after attack.
+	# If p2 is lowest point after attack -> release starts after attack
+	if((rol_var.values[p3] <= grad_var) or (p2==p3)):
+		attack = (0,p2)
+		sustain = (p2,p2) # No sustain
+		release = (p2,grad.shape[0])
+	else:
+		# If lowest peak has higher variance than total variance -> Sustain starts after attack.
+		# Find where the curve changes direction before p3
+		p4 = p3 - np.argmax(np.flip(grad[p2:p3]) >= 0)
+		attack = (0,p2)
+		sustain = (p2,p4)
+		release = (p4,grad.shape[0])
+	
 	if(plot):
 		rp = np.max(np.abs(D_harmonic))
 		plt.figure(figsize=(20,15))
 		ax1 = plt.subplot(3, 1, 1)
-		plt.title("Spectrogram (log scale) and Mean of gradients for each harmonic frequency")
+		plt.title("Spectrogram (log scale)")
 		librosa.display.specshow(librosa.amplitude_to_db(D_harmonic, ref=rp), y_axis='log')
 		plt.subplot(3, 1, 2, sharex=ax1)
+		plt.title('Gradient of mean amplitudes of all harmonic frequencies over time')
 		plt.plot(grad)
-		#plt.subplot(3,1,3,sharex=ax1)
-		#plt.plot(oenv)
-		#plt.vlines(onset_bt, 0, oenv.max(), label='Backtracked', color='r')
-		plt.scatter(p1,grad[p1],color='r')
-		plt.scatter(p2,grad[p2],color='b')
-		plt.scatter(p3,grad[p3],color='g')
-		plt.scatter(p4,grad[p4],color='y')		
+		plt.scatter(p1,grad[p1],color='r',label='p1')
+		plt.scatter(p2,grad[p2],color='g',label='p2')
+		plt.scatter(p3,grad[p3],color='black',label='p3')
+		if( not ((rol_var.values[p3] <= grad_var) or (p2==p3))):
+			plt.scatter(p4,grad[p4],color='b',label='p4')
+			plt.vlines(attack[1],grad.min(),grad.max(),label='attack end/sustain start',color='b',linestyle='--')
+			plt.vlines(sustain[1],grad.min(),grad.max(),label='sustain end/release start',color='r',linestyle='--')
+		else:
+			plt.vlines(attack[1],grad.min(),grad.max(),label='attack end/release start',color='b',linestyle='--')
+		plt.xlabel('Time [sample index]')
+		plt.ylabel('Gradient of mean of amplitudes of all harmonic frequencies')
+		plt.legend()	
 		plt.subplot(3,1,3,sharex=ax1)
-		plt.plot(rol_var)
-		#plt.scatter(max_peaks,means[max_peaks],color='b')
-		#plt.scatter(min_peaks,means[min_peaks],color='r')
+		plt.title('Variances')
+		plt.plot(rol_var,label='Rolling variance of gradient')
+		plt.hlines(grad_var, 0, grad.shape[0], color='r',label='Total variance of gradient')
+		plt.xlabel('Time [sample index]')
+		plt.ylabel('Variance of upper gradient')
+		plt.legend()
 		plt.axis('tight')
 		plt.show()
+	return attack,sustain,release

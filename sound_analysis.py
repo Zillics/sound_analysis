@@ -51,7 +51,10 @@ def main():
 			filepath = glob.glob('**/'+args.load_file,recursive=True) # Search for filename in current and all subdirectories
 			if(len(filepath) == 0): raise ValueError(args.load_file+ ' not found!')
 			S,freqs,sr = utils.spectrogram(filepath[0],librosa_=True,mel=False,plot=args.plot)
-			utils.get_adsr(S,freqs,sr,plot=args.plot)
+			attack,sustain,release = utils.get_adsr(S,freqs,sr,plot=args.plot)
+			print(attack)
+			print(sustain)
+			print(release)
 
 if __name__ == '__main__':
 	main()
