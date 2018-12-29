@@ -12,8 +12,6 @@ import librosa.onset
 sns.set()
 sns.set_style("whitegrid", {'axes.grid' : False})
 
-MIN_PROMINENCE = 1 # Minimum prominence required for a frequency to be considered a harmonic. Used in peak detection
-
 def spectrogram(filepath,librosa_=True,mel=False,plot=True):
 	if(not librosa_):
 		# Read the wav file (mono)
@@ -137,10 +135,16 @@ def get_harmonics(S,freqs,plot=True):
 	means = D_harmonic.mean(axis=1)
 	return freqs[peaks_idx],means[peaks_idx]
 
+# Input: Spectrogram S, frequencies freqs of that Sprectrogram, sample rate sr_ of Spectrogram
+# Returns ranges of Attack, Sustain and Release for a soundwave of one(!) note pressed
+# Customized ADSR range estimator for one(!) note soundwaves. Attack is here defined as A+D in ADSR
+# Could easily be extended to output A and D separately as well in the future.(Something on TODO list) 
+# How algorithm works (and why) might get clearer by looking at the plots.
+# TODO:
+# 1. Output ranges of A and D separately
+# 2. Output fourth range between current release start and when curve starts to stabilize
 def get_adsr(S,freqs,sr_,plot=True):
 	D_harmonic, D_percussive = librosa.decompose.hpss(S)
-	print(D_harmonic)
-	print(D_harmonic.shape)
 	means = np.mean(D_harmonic,axis=0)
 	grad = np.gradient(means)
 	# Total variance and rolling variance
@@ -155,7 +159,6 @@ def get_adsr(S,freqs,sr_,plot=True):
 	p2 = p2_ + np.argmax(rol_var[p2_:].values <= grad_var)
 	# Find lowest peak of gradient
 	p3 = p2 + np.argmin(grad[p2:])
-	#if(p2==p3): raise ValueError("p2==p3 TODO: make decision based on this")
 	# If lowest peak has lower variance than total variance -> release starts after attack.
 	# If p2 is lowest point after attack -> release starts after attack
 	if((rol_var.values[p3] <= grad_var) or (p2==p3)):
