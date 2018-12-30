@@ -2,15 +2,124 @@ import glob
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+from pandas.tools.plotting import autocorrelation_plot
+from statsmodels.tsa.arima_model import ARIMA
+from statsmodels.tsa.seasonal import seasonal_decompose
 from scipy.io import wavfile
 from scipy.signal import find_peaks,peak_prominences
 import numpy as np
 import librosa
 import librosa.display
 import librosa.onset
+import time
 
 sns.set()
 sns.set_style("whitegrid", {'axes.grid' : False})
+
+MIN_PROMINENCE = 1
+
+# Find file(s) recursively through all subdirectories below current. 
+# IF all_files is enabled, returns list of all files with extension
+# ELSE Returns first file that is found with name filename
+def find_file(filename,all_files=False,extension='.wav'):
+	if(all_files):
+		filepath = glob.glob(filename+'/*'+extension)
+		if(len(filepath) == 0): raise ValueError('No .wav files found from '+filename)
+		return filepath
+	else:
+		filepath = glob.glob('**/'+filename,recursive=True) # Search for filename in current and all subdirectories
+		if(len(filepath) == 0): raise ValueError(filename + ' not found!')
+		return filepath[0]
+
+def visualize(filepath,raw=False,harm_perc=False,spectrogram=False,harm_spectr=True,perc_spectr=True):
+	y, sr_ = librosa.load(filepath)
+	features = [raw,harm_perc,spectrogram,harm_spectr,perc_spectr]
+	subplot_n = np.array(features).sum()
+	fig = plt.figure(figsize=(20,15))
+	ax1 = plt.subplot(subplot_n, 1, 1)
+	i = 1
+	if(raw):
+		plt.title('Raw audio wave')
+		librosa.display.waveplot(y, sr=sr_)
+		i += 1
+	if(harm_perc):
+		plt.subplot(subplot_n, 1, i)
+		plt.title('Raw audio wave separated into harmonic and percussive components')
+		y_harm, y_perc = librosa.effects.hpss(y)
+		librosa.display.waveplot(y_harm, sr=sr_, alpha=0.25)
+		librosa.display.waveplot(y_perc, sr=sr_, color='r', alpha=0.5)
+		i += 1
+	if(spectrogram):
+		plt.subplot(subplot_n, 1, i)
+		plt.title('Spectrogram of log scale')
+		D = librosa.stft(y)
+		magnitude, phase = librosa.magphase(D)
+		rp = np.max(np.abs(D))
+		librosa.display.specshow(librosa.amplitude_to_db(D, ref=rp), y_axis='log')
+		i += 1
+	if(harm_spectr):
+		plt.subplot(subplot_n, 1, i)
+		plt.title('Spectrogram of harmonic_components (log scale)')
+		D = librosa.stft(y)
+		D_harmonic, D_percussive = librosa.decompose.hpss(D)
+		rp = np.max(np.abs(D_harmonic))
+		librosa.display.specshow(librosa.amplitude_to_db(D_harmonic, ref=rp), y_axis='log')
+		i += 1
+	if(perc_spectr):
+		plt.subplot(subplot_n, 1, i)
+		plt.title('Spectrogram of percussive_components (log scale)')		
+		rp = np.max(np.abs(D_percussive))
+		librosa.display.specshow(librosa.amplitude_to_db(D_percussive, ref=rp), y_axis='log')
+		i += 1
+
+	plt.suptitle('Visualization for '+filepath)
+	plt.show()
+
+def visualize_S(S,freqs):
+	plt.figure()
+	librosa.display.specshow(S, y_axis='log')
+	plt.show()
+
+def fit_freqs(S,freqs,plot=False):
+	freqs,amps,freq_idx = get_harmonics(S,freqs,plot=False)
+	print(freqs.shape)
+	print(amps.shape)
+	print(amps)
+	if(plot):
+		plt.ion()
+	for i in range(freq_idx.shape[0]):
+		if(plot):
+			fig, ax_list_ = plt.subplots(3,1)
+		else:
+			ax_list_ = []
+		S_freq = S[freq_idx[i],:]
+		try:
+			fit_ARIMA(S_freq,ax_list=ax_list_)
+		except Exception as e:
+			print(i," Failed!")
+			print(e)
+		if(plot):
+			fig.set_size_inches(20,10)
+			plt.legend()
+			plt.suptitle('Freq index: '+str(freq_idx[i])+'\nFrequency: '+str(int(freqs[i]))+'Hz')
+			plt.draw()
+			plt.pause(0.001)
+			# Wait 1s and clear axis
+			time.sleep(3)
+			plt.close('all')
+
+def fit_ARIMA(x,p=5,d=2,q=0,ax_list=[]):
+	t_series = pd.Series(data=x)
+	model = ARIMA(t_series,order=(p,d,q))
+	model_fit = model.fit(disp=0)
+	residuals = pd.DataFrame(model_fit.resid)
+	if(len(ax_list) == 3):
+		ax_list[0].plot(range(x.shape[0]),x)
+		ax_list[0].set_title('Amplitude of frequency over time')
+		residuals.plot(ax=ax_list[1])
+		ax_list[1].set_title('Residual of ARIMA model over time')
+		residuals.plot(kind='kde',ax=ax_list[2])
+		ax_list[2].set_title('Distribution of residuals for ARIMA model')
 
 def spectrogram(filepath,librosa_=True,mel=False,plot=True):
 	if(not librosa_):
@@ -102,7 +211,6 @@ def get_peaks(S,freqs,plot=False,harm_sep=True):
 # S: spectrogram (shape=(magnitude of frequencies,time))
 def get_harmonics(S,freqs,plot=True):
 	D_harmonic, D_percussive = librosa.decompose.hpss(S)
-	print(D_harmonic)
 	rp = np.max(np.abs(S))
 	if(plot):
 		plt.figure(figsize=(12, 8))
@@ -133,7 +241,7 @@ def get_harmonics(S,freqs,plot=True):
 		plt.scatter(freqs[peaks_idx],means_db[peaks_idx])
 		plt.show()
 	means = D_harmonic.mean(axis=1)
-	return freqs[peaks_idx],means[peaks_idx]
+	return freqs[peaks_idx],means[peaks_idx],peaks_idx
 
 # Input: Spectrogram S, frequencies freqs of that Sprectrogram, sample rate sr_ of Spectrogram
 # Returns ranges of Attack, Sustain and Release for a soundwave of one(!) note pressed
@@ -159,16 +267,15 @@ def get_adsr(S,freqs,sr_,filename='File?',plot=True):
 	p2 = p2_ + np.argmax(rol_var[p2_:].values <= grad_var)
 	# Find lowest peak of gradient
 	p3 = p2 + np.argmin(grad[p2:])
-	# If lowest peak has lower variance than total variance -> release starts after attack.
 	# If p2 is lowest point after attack -> release starts after attack
 	if(p2==p3):
 		attack = (0,p2)
 		sustain = (p2,p2) # No sustain
 		release = (p2,grad.shape[0])
 	else:
-		# If lowest peak has higher variance than total variance -> Sustain starts after attack.
+		# If p2 is not lowest point after attack -> Sustain starts after attack.
 		# Find where the curve changes direction before p3
-		p4 = p3 - np.argmax(np.flip(grad[p2:p3]) >= 0)
+		p4 = p3 - np.argmax(np.flip(grad[p2:p3]) >= grad[p2:p3].mean())
 		attack = (0,p2)
 		sustain = (p2,p4)
 		release = (p4,grad.shape[0])

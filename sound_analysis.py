@@ -9,10 +9,12 @@ SPECTRUM_CSV_DEST = "../../C++/stk_adaptive_synth/src/synth_files/"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--spectro", "-sp", action="store_true", help="Spectrogram")
+parser.add_argument("--visualize", "-vi",action="store_true", help="Visualize wavfile")
 parser.add_argument("--load_file", "-lf", type=str,default=None, help="Name of wav file to analyze")
 parser.add_argument("--load_dir", "-ld", type=str,default=None, help="Name of directory of wav file(s)")
-parser.add_argument("--peaks", "-p", action="store_true", help="Peak detection on spectrogram (Outdated?)")
+parser.add_argument("--peaks", "-p", action="store_true", help="Peak detection on spectrogram (Outdated)")
 parser.add_argument("--harm", "-hr", action="store_true", help="Get harmonics from sound file")
+parser.add_argument("--analyze", "-an", action="store_true",help="Deep analysis and feature extraction for soundwave")
 parser.add_argument("--adsr",action="store_true", help="Estimate time ranges for Attack,Sustain and Release")
 parser.add_argument("--plot", "-plt", action="store_true", help="Plot everything")
 parser.add_argument("--save_file", "-sf", type=str,default=None, help="Name of csv filepath to upload data")
@@ -42,25 +44,30 @@ def main():
 			filepath = glob.glob('**/'+args.load_file,recursive=True) # Search for filename in current and all subdirectories
 			if(len(filepath) == 0): raise ValueError(args.load_file+ ' not found!')
 			S,freqs,sr = utils.spectrogram(filepath[0],librosa_=True,mel=False,plot=args.plot)
-			peaks,amps = utils.get_harmonics(S,freqs)
+			peaks,amps,_ = utils.get_harmonics(S,freqs)
 			if(args.save_file != None):
 				utils.write_peaks(peaks,amps,SPECTRUM_CSV_DEST+args.save_file)
 		else:
 			raise Exception("--load_file argument missing!")
+	if(args.analyze):
+		if(args.load_file != None):
+			filepath = utils.find_file(args.load_file)
+			S,freqs,sr = utils.spectrogram(filepath, librosa_=True,mel=False,plot=args.plot)
+			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=args.plot)
+			# Take a look at sustain part
+			S_sustain = S[:,sustain[0]:sustain[1]]
+			utils.fit_freqs(S_sustain,freqs,plot=args.plot)
 	if(args.adsr):
 		if(args.load_file != None):
-			filepath = glob.glob('**/'+args.load_file,recursive=True) # Search for filename in current and all subdirectories
-			if(len(filepath) == 0): raise ValueError(args.load_file+ ' not found!')
-			S,freqs,sr = utils.spectrogram(filepath[0],librosa_=True,mel=False,plot=args.plot)
-			attack,sustain,release = utils.get_adsr(S,freqs,sr,plot=args.plot)
+			filepath = utils.find_file(args.load_file)
+			S,freqs,sr = utils.spectrogram(filepath,librosa_=True,mel=False,plot=args.plot)
+			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=args.plot)
 			print(attack)
 			print(sustain)
 			print(release)
 		else:
 			if(args.load_dir != None):
-				filepath = glob.glob(args.load_dir+'/*.wav')
-				print(glob.glob(args.load_dir))
-				if(len(filepath) == 0): raise ValueError('No .wav files found from '+args.load_dir)
+				filepath = utils.find_file(args.load_dir,all_files=True,extension='.wav')
 				for file in filepath:
 					try:
 						S,freqs,sr = utils.spectrogram(file,librosa_=True,mel=False,plot=args.plot)
@@ -72,6 +79,12 @@ def main():
 						raise KeyboardInterrupt("Ctrl+c pressed!")
 					except Exception as e:
 						print(e)
+			else:
+				raise Exception("--load_file or --load_dir argument missing!")
+	if(args.visualize):
+		if(args.load_file != None):
+			filepath = utils.find_file(args.load_file)
+			utils.visualize(filepath)
 
 if __name__ == '__main__':
 	main()
