@@ -94,7 +94,9 @@ def fit_freqs(S,freqs,plot=False):
 			ax_list_ = []
 		S_freq = S[freq_idx[i],:]
 		try:
-			fit_ARIMA(S_freq,ax_list=ax_list_)
+			model_result,mu,arparams,_ = fit_ARIMA(S_freq,ax_list=ax_list_)
+			#print(model_result.summary())
+			print("arparams: ",arparams,"mu: ",mu)
 		except Exception as e:
 			print(i," Failed!")
 			print(e)
@@ -120,6 +122,10 @@ def fit_ARIMA(x,p=5,d=2,q=0,ax_list=[]):
 		ax_list[1].set_title('Residual of ARIMA model over time')
 		residuals.plot(kind='kde',ax=ax_list[2])
 		ax_list[2].set_title('Distribution of residuals for ARIMA model')
+	mu = model_fit.params['const']
+	arparams = model_fit.arparams
+	maparams = model_fit.maparams
+	return model_fit, mu, arparams,maparams
 
 def spectrogram(filepath,librosa_=True,mel=False,plot=True):
 	if(not librosa_):
