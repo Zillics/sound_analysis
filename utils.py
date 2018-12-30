@@ -85,22 +85,30 @@ def fit_freqs(S,freqs,plot=False):
 	print(freqs.shape)
 	print(amps.shape)
 	print(amps)
-	if(plot):
+	if(True):
 		plt.ion()
 	for i in range(freq_idx.shape[0]):
-		if(plot):
+		if(False):
 			fig, ax_list_ = plt.subplots(3,1)
 		else:
 			ax_list_ = []
 		S_freq = S[freq_idx[i],:]
 		try:
 			model_result,mu,arparams,_ = fit_ARIMA(S_freq,ax_list=ax_list_)
-			#print(model_result.summary())
-			print("arparams: ",arparams,"mu: ",mu)
+			#plt.plot(S_freq)
+			model_result.plot_predict()
+			predictions = predict_ARIMA(S_freq,mu,arparams,d=2)
+			predictions = np.concatenate((np.zeros(4),predictions))
+			plt.plot(predictions)
+			plt.draw()
+			plt.pause(0.001)
+			time.sleep(10)
+			plt.close('all')
+			#print("arparams: ",arparams,"mu: ",mu)
 		except Exception as e:
 			print(i," Failed!")
 			print(e)
-		if(plot):
+		if(False):
 			fig.set_size_inches(20,10)
 			plt.legend()
 			plt.suptitle('Freq index: '+str(freq_idx[i])+'\nFrequency: '+str(int(freqs[i]))+'Hz')
@@ -127,6 +135,28 @@ def fit_ARIMA(x,p=5,d=2,q=0,ax_list=[]):
 	maparams = model_fit.maparams
 	return model_fit, mu, arparams,maparams
 
+def _ARIMA_differencing(Y):
+	y = np.zeros(Y.shape[0]-2)
+	for i in range(y.shape[0]):
+		y[i] = Y[i+2] - 2*Y[i+1] + Y[i]
+	return y
+def _ARIMA_undifferencing(y,Y_):
+	Y_hat = np.zeros(y.shape[0]-2)
+	Y = Y_[4:]
+	for i in range(y.shape[0]-2):
+		Y_hat[i] = y[i+2] + 2*Y[i+1] - Y[i]
+	return Y_hat
+# Custom function for ARIMA prediction. Based on: https://towardsdatascience.com/unboxing-arima-models-1dc09d2746f8
+def predict_ARIMA(Y,mu,arparams,d=2):
+	y_hat = []
+	p = arparams.shape[0]
+	y = _ARIMA_differencing(Y)
+	for i in range(y.shape[0]-p):
+		prediction = mu + np.sum(np.dot(arparams,y[i:i+p]))
+		y_hat.append(prediction)
+	y_hat = np.array(y_hat)
+	Y_hat = _ARIMA_undifferencing(y_hat,Y)
+	return Y_hat
 def spectrogram(filepath,librosa_=True,mel=False,plot=True):
 	if(not librosa_):
 		# Read the wav file (mono)
