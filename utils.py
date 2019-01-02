@@ -33,7 +33,30 @@ def find_file(filename,all_files=False,extension='.wav'):
 		if(len(filepath) == 0): raise ValueError(filename + ' not found!')
 		return filepath[0]
 
-def visualize(filepath,raw=False,harm_perc=False,spectrogram=False,harm_spectr=True,perc_spectr=True):
+def visualize_S(S,sr):
+	fig = plt.figure(figsize=(20,15))
+	ax1 = plt.subplot(3,1,1)
+	plt.title('Spectrogram of log scale')
+
+	magnitude, phase = librosa.magphase(S)
+	rp = np.max(np.abs(S))
+	librosa.display.specshow(librosa.amplitude_to_db(S, ref=rp), y_axis='log')
+
+	plt.subplot(3, 1, 2)
+	plt.title('Spectrogram of harmonic_components (log scale)')
+
+	D_harmonic, D_percussive = librosa.decompose.hpss(S)
+	rp = np.max(np.abs(D_harmonic))
+	librosa.display.specshow(librosa.amplitude_to_db(D_harmonic, ref=rp), y_axis='log')
+
+	plt.subplot(3, 1, 3)
+	plt.title('Spectrogram of percussive_components (log scale)')		
+	rp = np.max(np.abs(D_percussive))
+	librosa.display.specshow(librosa.amplitude_to_db(D_percussive, ref=rp), y_axis='log')
+
+	plt.show()
+
+def visualize(filepath,raw=False,harm_perc=False,spectrogram=False,harm_spectr=False,perc_spectr=False):
 	y, sr_ = librosa.load(filepath)
 	features = [raw,harm_perc,spectrogram,harm_spectr,perc_spectr]
 	subplot_n = np.array(features).sum()
@@ -69,24 +92,17 @@ def visualize(filepath,raw=False,harm_perc=False,spectrogram=False,harm_spectr=T
 		i += 1
 	if(perc_spectr):
 		plt.subplot(subplot_n, 1, i)
+		D = librosa.stft(y)
+		D_harmonic, D_percussive = librosa.decompose.hpss(D)
 		plt.title('Spectrogram of percussive_components (log scale)')		
 		rp = np.max(np.abs(D_percussive))
 		librosa.display.specshow(librosa.amplitude_to_db(D_percussive, ref=rp), y_axis='log')
 		i += 1
-
-	plt.suptitle('Visualization for '+filepath)
-	plt.show()
-
-def visualize_S(S,freqs):
-	plt.figure()
-	librosa.display.specshow(S, y_axis='log')
+	plt.suptitle('Visualization for ' +filename)
 	plt.show()
 
 def fit_freqs(S,freqs,plot=False):
 	freqs,amps,freq_idx = get_harmonics(S,freqs,plot=False)
-#	print(freqs.shape)
-#	print(amps.shape)
-#	print(amps)
 	if(True):
 		plt.ion()
 	for i in range(freq_idx.shape[0]):
@@ -104,11 +120,14 @@ def fit_freqs(S,freqs,plot=False):
 		ax_list_[1].plot(np.array(range(9,S_freq.shape[0])),predictions,'b',label='Custom function for ARIMA predictions')
 		ax_list_[1].set_title('ARIMA predictions using custom ARIMA prediction function')
 		ax_list_[1].legend()
-		noise = np.random.rand(S_freq.shape[0])*np.std(S_freq) + S_freq.mean()
+		#noise = np.random.rand(S_freq.shape[0])*np.std(S_freq) + S_freq.mean()
+		x = np.linspace(0, 100, S_freq.shape[0])
+		noise = S_freq.mean() + np.sin(x)*S_freq.std()
 		predictions_2 = predict_ARIMA(noise,mu,arparams,d=2)
 		#model_result.plot_predict(ax)
 		ax_list_[2].plot(np.array(range(9,S_freq.shape[0])),predictions_2,label='Randomly generated samples')
 		ax_list_[2].plot(S_freq,label='Real value')
+		ax_list_[2].scatter(np.array(range(S_freq.shape[0])),noise,label='Genearation input')
 		ax_list_[2].set_title('Randomly generated values through ARIMA model')
 		plt.legend()
 		plt.draw()
@@ -124,6 +143,20 @@ def fit_freqs(S,freqs,plot=False):
 			# Wait 1s and clear axis
 			time.sleep(3)
 			plt.close('all')
+
+
+def fit_noise(S,freqs,plot=False):
+	D_harmonic, D_percussive = librosa.decompose.hpss(S)
+	perc_means = D_percussive.mean(axis=0)
+	#peak = np.argmax(perc_means)
+	y_percussive = librosa.core.istft(D_percussive)
+	perc_std = y_percussive.std()
+	perc_mean = y_percussive.mean()
+	if(plot):
+		plt.hist(y_percussive,bins=100)
+		plt.title('Percussive noise distribution\nmean: '+str(perc_mean)+', std: '+str(perc_std))
+		plt.show()
+	return perc_mean,perc_std
 
 def make_stationary(x):
 	x_diff = np.zeros(x.shape[0]-1)
@@ -231,6 +264,15 @@ def write_peaks(peak_freqs, peak_amps,filepath,norm=True):
 	df = pd.DataFrame(data=freq_amp,index=None)
 	print("Writing to file ", filepath,"....")
 	df.to_csv(filepath,sep=',',index=False,header=False)
+	print("File written successfully!")
+
+def write_noise(noise_mean,noise_std,filepath):
+	with open(filepath,"w+") as f:
+		print("Writing to file ", filepath, "....")
+		f = open(filepath,"w+")
+		f.write(str(noise_mean))
+		f.write(',')
+		f.write(str(noise_std))
 	print("File written successfully!")
 
 def normalize(values,norm_0=True):

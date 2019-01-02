@@ -22,6 +22,7 @@ parser.add_argument("--resynthesize_static",action="store_true",help="Resynthesi
 parser.add_argument("--resynthesize_dynamics",action="store_true",help="Resynthesize with dynamic amplitudes for each frequency")
 parser.add_argument("--plot", "-plt", action="store_true", help="Plot everything")
 parser.add_argument("--save_file", "-sf", type=str,default=None, help="Name of csv filepath to upload data")
+parser.add_argument("--_fit_noise",action="store_true")
 args = parser.parse_args()
 def main():
 	if(args.resynthesize_static):
@@ -29,11 +30,14 @@ def main():
 			filepath = utils.find_file(args.load_file)
 			spectrum,freqs,_ = utils.spectrogram(filepath,plot=args.plot)
 			freqs,amps,freq_idx = utils.get_harmonics(spectrum,freqs,plot=args.plot)
+			noise_mean,noise_std = utils.fit_noise(spectrum,freqs,plot=args.plot)
 			if(args.save_file != None):
 				save_path = DEST_DIR+args.save_file
 			else:
-				save_path = args.load_file + '_resynthesized.csv'
+				save_path = DEST_DIR+args.load_file[:-4] + '_resynthesized.csv'
+			noise_path = save_path[:-4]+'_noise.csv'
 			utils.write_peaks(freqs,amps,save_path,norm=True)
+			utils.write_noise(noise_mean,noise_std,noise_path)
 		else:
 			if(args.load_dir != None):
 				filepath = utils.find_file(args.load_dir,all_files=True,extension='.wav')
@@ -49,6 +53,16 @@ def main():
 						print(e)
 			else:
 				raise Exception("--load_file or --load_dir argument missing!")
+	if(args._fit_noise):
+		if(args.load_file != None):
+			filepath = utils.find_file(args.load_file)
+			S,freqs,sr = utils.spectrogram(filepath,librosa_=True,mel=False,plot=False)
+			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=False)
+			S_sustain=S[:,sustain[0]:sustain[1]]
+			#utils.visualize_S(S_sustain,sr)
+			noise_mean, noise_std = utils.fit_noise(S_sustain,freqs,args.plot)
+		else:
+			raise Exception("--load_file argument missing!")
 	if(args.spectro):
 		if(args.load_file != None):
 			filepath = glob.glob('**/'+args.load_file,recursive=True) # Search for filename in current and all subdirectories
@@ -82,7 +96,7 @@ def main():
 		if(args.load_file != None):
 			filepath = utils.find_file(args.load_file)
 			S,freqs,sr = utils.spectrogram(filepath, librosa_=True,mel=False,plot=args.plot)
-			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=args.plot)
+			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=False)
 			# Take a look at sustain part
 			S_sustain = S[:,sustain[0]:sustain[1]]
 			utils.fit_freqs(S_sustain,freqs,plot=args.plot)
