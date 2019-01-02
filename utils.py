@@ -5,6 +5,8 @@ import pandas as pd
 from pandas.tools.plotting import autocorrelation_plot
 from statsmodels.tsa.arima_model import ARIMA
 from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.stattools import periodogram
+import statsmodels
 from scipy.io import wavfile
 from scipy.signal import find_peaks,peak_prominences
 import numpy as np
@@ -82,32 +84,37 @@ def visualize_S(S,freqs):
 
 def fit_freqs(S,freqs,plot=False):
 	freqs,amps,freq_idx = get_harmonics(S,freqs,plot=False)
-	print(freqs.shape)
-	print(amps.shape)
-	print(amps)
+#	print(freqs.shape)
+#	print(amps.shape)
+#	print(amps)
 	if(True):
 		plt.ion()
 	for i in range(freq_idx.shape[0]):
-		if(False):
+		if(True):
 			fig, ax_list_ = plt.subplots(3,1)
+			fig.set_size_inches(30,20)
 		else:
 			ax_list_ = []
 		S_freq = S[freq_idx[i],:]
-		try:
-			model_result,mu,arparams,_ = fit_ARIMA(S_freq,ax_list=ax_list_)
-			#plt.plot(S_freq)
-			model_result.plot_predict()
-			predictions = predict_ARIMA(S_freq,mu,arparams,d=2)
-			predictions = np.concatenate((np.zeros(4),predictions))
-			plt.plot(predictions)
-			plt.draw()
-			plt.pause(0.001)
-			time.sleep(10)
-			plt.close('all')
-			#print("arparams: ",arparams,"mu: ",mu)
-		except Exception as e:
-			print(i," Failed!")
-			print(e)
+		model_result,mu,arparams,_ = fit_ARIMA(S_freq)
+		model_result.plot_predict(ax=ax_list_[0])
+		ax_list_[0].set_title('ARIMA predictions using statsmodels plot_predict')
+		predictions = predict_ARIMA(S_freq,mu,arparams,d=2)
+		ax_list_[1].plot(S_freq,color='orange',label='Real value')
+		ax_list_[1].plot(np.array(range(9,S_freq.shape[0])),predictions,'b',label='Custom function for ARIMA predictions')
+		ax_list_[1].set_title('ARIMA predictions using custom ARIMA prediction function')
+		ax_list_[1].legend()
+		noise = np.random.rand(S_freq.shape[0])*np.std(S_freq) + S_freq.mean()
+		predictions_2 = predict_ARIMA(noise,mu,arparams,d=2)
+		#model_result.plot_predict(ax)
+		ax_list_[2].plot(np.array(range(9,S_freq.shape[0])),predictions_2,label='Randomly generated samples')
+		ax_list_[2].plot(S_freq,label='Real value')
+		ax_list_[2].set_title('Randomly generated values through ARIMA model')
+		plt.legend()
+		plt.draw()
+		plt.pause(0.001)
+		time.sleep(5)
+		plt.close('all')
 		if(False):
 			fig.set_size_inches(20,10)
 			plt.legend()
@@ -117,6 +124,12 @@ def fit_freqs(S,freqs,plot=False):
 			# Wait 1s and clear axis
 			time.sleep(3)
 			plt.close('all')
+
+def make_stationary(x):
+	x_diff = np.zeros(x.shape[0]-1)
+	for i in range(1,x.shape[0]):
+		x_diff[i-1] = x[i]-x[i-1]
+	return x_diff
 
 def fit_ARIMA(x,p=5,d=2,q=0,ax_list=[]):
 	t_series = pd.Series(data=x)
@@ -157,6 +170,7 @@ def predict_ARIMA(Y,mu,arparams,d=2):
 	y_hat = np.array(y_hat)
 	Y_hat = _ARIMA_undifferencing(y_hat,Y)
 	return Y_hat
+
 def spectrogram(filepath,librosa_=True,mel=False,plot=True):
 	if(not librosa_):
 		# Read the wav file (mono)
@@ -310,7 +324,6 @@ def get_adsr(S,freqs,sr_,filename='File?',plot=True):
 		release = (p2,grad.shape[0])
 	else:
 		# If p2 is not lowest point after attack -> Sustain starts after attack.
-		# Find where the curve changes direction before p3
 		p4 = p3 - np.argmax(np.flip(grad[p2:p3]) >= grad[p2:p3].mean())
 		attack = (0,p2)
 		sustain = (p2,p4)

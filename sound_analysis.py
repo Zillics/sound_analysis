@@ -4,8 +4,10 @@ import utils
 import glob
 import librosa
 import numpy as np
+import os
 
 SPECTRUM_CSV_DEST = "../../C++/stk_adaptive_synth/src/synth_files/"
+DEST_DIR = "../../C++/stk_adaptive_synth/src/synth_files/"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--spectro", "-sp", action="store_true", help="Spectrogram")
@@ -16,10 +18,37 @@ parser.add_argument("--peaks", "-p", action="store_true", help="Peak detection o
 parser.add_argument("--harm", "-hr", action="store_true", help="Get harmonics from sound file")
 parser.add_argument("--analyze", "-an", action="store_true",help="Deep analysis and feature extraction for soundwave")
 parser.add_argument("--adsr",action="store_true", help="Estimate time ranges for Attack,Sustain and Release")
+parser.add_argument("--resynthesize_static",action="store_true",help="Resynthesize with static amplitudes for each frequency")
+parser.add_argument("--resynthesize_dynamics",action="store_true",help="Resynthesize with dynamic amplitudes for each frequency")
 parser.add_argument("--plot", "-plt", action="store_true", help="Plot everything")
 parser.add_argument("--save_file", "-sf", type=str,default=None, help="Name of csv filepath to upload data")
 args = parser.parse_args()
 def main():
+	if(args.resynthesize_static):
+		if(args.load_file != None):
+			filepath = utils.find_file(args.load_file)
+			spectrum,freqs,_ = utils.spectrogram(filepath,plot=args.plot)
+			freqs,amps,freq_idx = utils.get_harmonics(spectrum,freqs,plot=args.plot)
+			if(args.save_file != None):
+				save_path = DEST_DIR+args.save_file
+			else:
+				save_path = args.load_file + '_resynthesized.csv'
+			utils.write_peaks(freqs,amps,save_path,norm=True)
+		else:
+			if(args.load_dir != None):
+				filepath = utils.find_file(args.load_dir,all_files=True,extension='.wav')
+				for file in filepath:
+					try:
+						spectrum,freqs,_ = utils.spectrogram(file,plot=args.plot)
+						freqs,amps,freq_idx = utils.get_harmonics(spectrum,freqs,plot=args.plot)
+						save_path = DEST_DIR + os.path.basename(file) + '_resynthesized.csv'
+						utils.write_peaks(freqs,amps,save_path,norm=True)
+					except KeyboardInterrupt:
+						raise KeyboardInterrupt("Ctrl-c pressed!")
+					except Exception as e:
+						print(e)
+			else:
+				raise Exception("--load_file or --load_dir argument missing!")
 	if(args.spectro):
 		if(args.load_file != None):
 			filepath = glob.glob('**/'+args.load_file,recursive=True) # Search for filename in current and all subdirectories
