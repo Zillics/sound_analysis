@@ -14,11 +14,14 @@ import librosa
 import librosa.display
 import librosa.onset
 import time
+import soundfile as sf
 
 sns.set()
 sns.set_style("whitegrid", {'axes.grid' : False})
 
 MIN_PROMINENCE = 1
+FFT_WINDOW_SIZE = 2048
+DEBUG = True
 
 # Find file(s) recursively through all subdirectories below current. 
 # IF all_files is enabled, returns list of all files with extension
@@ -101,6 +104,21 @@ def visualize(filepath,raw=False,harm_perc=False,spectrogram=False,harm_spectr=F
 	plt.suptitle('Visualization for ' +filename)
 	plt.show()
 
+def plot_freqs(S,freqs):
+	freqs,amps,freq_idx = get_harmonics(S,freqs,plot=False)
+	fig,ax_list = plt.subplots(1,2)
+	fig.set_size_inches(30,20)
+	S_means = S.mean(axis=0)
+	for i in range(freq_idx.shape[0]):
+		S_freq = S[freq_idx[i],:]
+		ax_list[0].plot(S_freq,label=str(int(freqs[i]))+' Hz')
+		ax_list[0].set_title('Amplitudes for harmonic frequencies over time')
+
+	for i in range(freq_idx.shape[0]):
+		S_freq = S[freq_idx[i],:]/S_means
+		ax_list[1].plot(S_freq,label=str(int(freqs[i]))+' Hz')
+		ax_list[1].set_title('Amplitudes for harmonic frequencies over time (Normalized with mean amplitude of all frequencies)')
+	plt.show()
 def fit_freqs(S,freqs,plot=False):
 	freqs,amps,freq_idx = get_harmonics(S,freqs,plot=False)
 	if(True):
@@ -204,44 +222,18 @@ def predict_ARIMA(Y,mu,arparams,d=2):
 	Y_hat = _ARIMA_undifferencing(y_hat,Y)
 	return Y_hat
 
-def spectrogram(filepath,librosa_=True,mel=False,plot=True):
-	if(not librosa_):
-		# Read the wav file (mono)
-		samplingFrequency, signalData = wavfile.read(filepath)
-		spectrum,freqs,_,_ = plot.specgram(signalData,Fs=samplingFrequency)#,scale='dB')
-		# Plot the signal read from wav file
-		if(plot):
-			plt.subplot(211)
-			plt.title('Spectrogram of ' + filepath)
-			plt.plot(signalData)
-			plt.xlabel('Sample')
-			plt.ylabel('Amplitude')
-			plt.subplot(212)
-			plt.xlabel('Time')
-			plt.ylabel('Frequency')
-			plt.show()
-	else:
-		if(not mel):
-			y,sr_ = librosa.load(filepath)
-			n_fft_ = 2050 # FFT window size
-			D = librosa.stft(y,n_fft=n_fft_)
-			magnitude, phase = librosa.magphase(D)
-			freqs = librosa.core.fft_frequencies(sr=sr_,n_fft=n_fft_)
-			spectrum = magnitude
-		else:
-			y, sr_ = librosa.load(filepath,sr=None)
-			print("Creating spectrogram with sampling rate", sr, "Hz....")
-			fmax_ = sr_/2
-			S = librosa.feature.melspectrogram(y=y, sr=sr_,fmax=fmax_)
-			spectrum = S
-			freqs = librosa.core.mel_frequencies(n_mels=S.shape[0],fmax=fmax_)
-			if(plot):
-				plt.figure(figsize=(20, 8))
-				librosa.display.specshow(librosa.power_to_db(S,ref=np.max),y_axis='mel',fmax=fmax_,x_axis='time')
-				plt.colorbar(format='%+2.0f dB')
-				plt.title('Mel spectrogram')
-				plt.tight_layout()
-				plt.show()
+def spectrogram(filepath,n_fft_=FFT_WINDOW_SIZE,_debug=DEBUG):
+	y,sr_ = sf.read(filepath)
+	if(_debug):
+		print("Opening file",filepath," with sample rate ", sr_)
+	if(np.array(y.shape).shape[0] == 2):
+		y = y.mean(axis=1) # Stereo -> Mono
+	D = librosa.stft(y,n_fft=n_fft_)
+	magnitude, phase = librosa.magphase(D)
+	freqs = librosa.core.fft_frequencies(sr=sr_,n_fft=n_fft_)
+	spectrum = magnitude
+	if(_debug):
+		print("Creating spectrogram with shape (f,k): ",spectrum.shape)
 	return spectrum,freqs,sr_
 
 def write_spectro(spectrum,freqs,filepath,norm=True):

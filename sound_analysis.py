@@ -6,6 +6,8 @@ import librosa
 import numpy as np
 import os
 
+
+
 SPECTRUM_CSV_DEST = "../../C++/stk_adaptive_synth/src/synth_files/"
 DEST_DIR = "../../C++/stk_adaptive_synth/src/synth_files/"
 
@@ -14,7 +16,6 @@ parser.add_argument("--spectro", "-sp", action="store_true", help="Spectrogram")
 parser.add_argument("--visualize", "-vi",action="store_true", help="Visualize wavfile")
 parser.add_argument("--load_file", "-lf", type=str,default=None, help="Name of wav file to analyze")
 parser.add_argument("--load_dir", "-ld", type=str,default=None, help="Name of directory of wav file(s)")
-parser.add_argument("--peaks", "-p", action="store_true", help="Peak detection on spectrogram (Outdated)")
 parser.add_argument("--harm", "-hr", action="store_true", help="Get harmonics from sound file")
 parser.add_argument("--analyze", "-an", action="store_true",help="Deep analysis and feature extraction for soundwave")
 parser.add_argument("--adsr",action="store_true", help="Estimate time ranges for Attack,Sustain and Release")
@@ -28,7 +29,7 @@ def main():
 	if(args.resynthesize_static):
 		if(args.load_file != None):
 			filepath = utils.find_file(args.load_file)
-			spectrum,freqs,_ = utils.spectrogram(filepath,plot=args.plot)
+			spectrum,freqs,_ = utils.spectrogram(filepath)
 			freqs,amps,freq_idx = utils.get_harmonics(spectrum,freqs,plot=args.plot)
 			noise_mean,noise_std = utils.fit_noise(spectrum,freqs,plot=args.plot)
 			if(args.save_file != None):
@@ -43,7 +44,7 @@ def main():
 				filepath = utils.find_file(args.load_dir,all_files=True,extension='.wav')
 				for file in filepath:
 					try:
-						spectrum,freqs,_ = utils.spectrogram(file,plot=args.plot)
+						spectrum,freqs,_ = utils.spectrogram(file)
 						freqs,amps,freq_idx = utils.get_harmonics(spectrum,freqs,plot=args.plot)
 						save_path = DEST_DIR + os.path.basename(file) + '_resynthesized.csv'
 						utils.write_peaks(freqs,amps,save_path,norm=True)
@@ -56,7 +57,7 @@ def main():
 	if(args._fit_noise):
 		if(args.load_file != None):
 			filepath = utils.find_file(args.load_file)
-			S,freqs,sr = utils.spectrogram(filepath,librosa_=True,mel=False,plot=False)
+			S,freqs,sr = utils.spectrogram(filepath)
 			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=False)
 			S_sustain=S[:,sustain[0]:sustain[1]]
 			#utils.visualize_S(S_sustain,sr)
@@ -65,28 +66,17 @@ def main():
 			raise Exception("--load_file argument missing!")
 	if(args.spectro):
 		if(args.load_file != None):
-			filepath = glob.glob('**/'+args.load_file,recursive=True) # Search for filename in current and all subdirectories
-			if(len(filepath) == 0): raise ValueError(args.load_file+ ' not found!')
-			spectrum,freqs = utils.spectrogram(filepath[0],plot=args.plot)
+			filepath = utils.find_file(args.load_file)
+			spectrum,freqs = utils.spectrogram(filepath)
 		else:
 			raise Exception("--load_file argument missing!")
 		if(args.save_file != None):
 			utils.write_spectro(spectrum,freqs,SPECTRUM_CSV_DEST+args.save_file)
-	if(args.peaks):
-		if(args.load_file != None):
-			filepath = glob.glob('**/'+args.load_file,recursive=True) # Search for filename in current and all subdirectories
-			if(len(filepath) == 0): raise ValueError(args.load_file+ ' not found!')
-			spectrum,freqs = utils.spectrogram(filepath[0],librosa_=True,plot=args.plot)
-			peaks,amps = utils.get_peaks(spectrum,freqs,plot=args.plot)
-			if(args.save_file != None):
-				utils.write_peaks(peaks,amps,SPECTRUM_CSV_DEST+args.save_file)
-		else:
-			raise Exception("--load_file argument missing!")
 	if(args.harm):
 		if(args.load_file != None):
-			filepath = glob.glob('**/'+args.load_file,recursive=True) # Search for filename in current and all subdirectories
-			if(len(filepath) == 0): raise ValueError(args.load_file+ ' not found!')
-			S,freqs,sr = utils.spectrogram(filepath[0],librosa_=True,mel=False,plot=args.plot)
+			filepath = utils.find_file(args.load_file)
+			S,freqs,sr = utils.spectrogram(filepath)
+			#print("S: ",S.shape,"S_: ", S_.shape)
 			peaks,amps,_ = utils.get_harmonics(S,freqs)
 			if(args.save_file != None):
 				utils.write_peaks(peaks,amps,SPECTRUM_CSV_DEST+args.save_file)
@@ -95,25 +85,28 @@ def main():
 	if(args.analyze):
 		if(args.load_file != None):
 			filepath = utils.find_file(args.load_file)
-			S,freqs,sr = utils.spectrogram(filepath, librosa_=True,mel=False,plot=args.plot)
-			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=False)
+			S,freqs,sr = utils.spectrogram(filepath)
+			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=False)#args.plot)
 			# Take a look at sustain part
 			S_sustain = S[:,sustain[0]:sustain[1]]
-			utils.fit_freqs(S_sustain,freqs,plot=args.plot)
+			utils.plot_freqs(S_sustain,freqs)
+			#utils.fit_freqs(S_sustain,freqs,plot=args.plot)
+		else:
+			raise Exception("--load_file argument missing!")
 	if(args.adsr):
 		if(args.load_file != None):
 			filepath = utils.find_file(args.load_file)
-			S,freqs,sr = utils.spectrogram(filepath,librosa_=True,mel=False,plot=args.plot)
+			S,freqs,sr = utils.spectrogram(filepath)
 			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=args.plot)
-			print(attack)
-			print(sustain)
-			print(release)
+			print("attack: ",attack)
+			print("sustain: ",sustain)
+			print("release: ",release)
 		else:
 			if(args.load_dir != None):
 				filepath = utils.find_file(args.load_dir,all_files=True,extension='.wav')
 				for file in filepath:
 					try:
-						S,freqs,sr = utils.spectrogram(file,librosa_=True,mel=False,plot=args.plot)
+						S,freqs,sr = utils.spectrogram(file)
 						attack,sustain,release=utils.get_adsr(S,freqs,sr,filename=file,plot=args.plot)
 						print('Attack: ', attack)
 						print('Sustain: ',sustain)
