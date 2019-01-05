@@ -9,12 +9,15 @@ from statsmodels.tsa.stattools import periodogram
 import statsmodels
 from scipy.io import wavfile
 from scipy.signal import find_peaks,peak_prominences
+from scipy import stats
+from sklearn.mixture import GaussianMixture
 import numpy as np
 import librosa
 import librosa.display
 import librosa.onset
 import time
 import soundfile as sf
+from fbprophet import Prophet
 
 sns.set()
 sns.set_style("whitegrid", {'axes.grid' : False})
@@ -119,49 +122,94 @@ def plot_freqs(S,freqs):
 		ax_list[1].plot(S_freq,label=str(int(freqs[i]))+' Hz')
 		ax_list[1].set_title('Amplitudes for harmonic frequencies over time (Normalized with mean amplitude of all frequencies)')
 	plt.show()
-def fit_freqs(S,freqs,plot=False):
-	freqs,amps,freq_idx = get_harmonics(S,freqs,plot=False)
-	if(True):
-		plt.ion()
-	for i in range(freq_idx.shape[0]):
-		if(True):
-			fig, ax_list_ = plt.subplots(3,1)
-			fig.set_size_inches(30,20)
-		else:
-			ax_list_ = []
-		S_freq = S[freq_idx[i],:]
-		model_result,mu,arparams,_ = fit_ARIMA(S_freq)
-		model_result.plot_predict(ax=ax_list_[0])
-		ax_list_[0].set_title('ARIMA predictions using statsmodels plot_predict')
-		predictions = predict_ARIMA(S_freq,mu,arparams,d=2)
-		ax_list_[1].plot(S_freq,color='orange',label='Real value')
-		ax_list_[1].plot(np.array(range(9,S_freq.shape[0])),predictions,'b',label='Custom function for ARIMA predictions')
-		ax_list_[1].set_title('ARIMA predictions using custom ARIMA prediction function')
-		ax_list_[1].legend()
-		#noise = np.random.rand(S_freq.shape[0])*np.std(S_freq) + S_freq.mean()
-		x = np.linspace(0, 100, S_freq.shape[0])
-		noise = S_freq.mean() + np.sin(x)*S_freq.std()
-		predictions_2 = predict_ARIMA(noise,mu,arparams,d=2)
-		#model_result.plot_predict(ax)
-		ax_list_[2].plot(np.array(range(9,S_freq.shape[0])),predictions_2,label='Randomly generated samples')
-		ax_list_[2].plot(S_freq,label='Real value')
-		ax_list_[2].scatter(np.array(range(S_freq.shape[0])),noise,label='Genearation input')
-		ax_list_[2].set_title('Randomly generated values through ARIMA model')
-		plt.legend()
-		plt.draw()
-		plt.pause(0.001)
-		time.sleep(5)
-		plt.close('all')
-		if(False):
-			fig.set_size_inches(20,10)
-			plt.legend()
-			plt.suptitle('Freq index: '+str(freq_idx[i])+'\nFrequency: '+str(int(freqs[i]))+'Hz')
-			plt.draw()
-			plt.pause(0.001)
-			# Wait 1s and clear axis
-			time.sleep(3)
-			plt.close('all')
 
+def fit_markov_chain(y,plot=False):
+	y_0 = y[:-1]
+	y_1 = y[1:]
+	grad_0 = np.gradient(y_0)
+	grad_1 = np.gradient(y_1)
+	state_1 = grad_1[np.where(grad_0 < 0)] # instances where previous gradient was negative
+	state_2 = grad_1[np.where(grad_0 > 0)] # instances where previous gradient was positive
+	mean_1,std_1 = stats.norm.fit(state_1)
+	mean_2,std_2 = stats.norm.fit(state_2)
+	# Reshaping parameters to be suitable for sklearn.GaussianMixture
+	means = np.array([mean_1,mean_2])
+	means = means.reshape(2,1)
+	y_GM = np.concatenate((state_2.reshape(-1,1),state_1.reshape(-1,1)))
+	precisions =  [1/(std_1**2),1/(std_2**2)]	
+	GM = GaussianMixture(n_components=2,covariance_type='spherical')
+	GM.weights_ = [0.5,0.5]
+	GM.means_ = means
+	GM.covariances_ = [std_1,std_2]
+	GM.precisions_ = precisions
+	GM.precisions_cholesky_ = precisions	
+	GM.converged_ = True
+	if(plot):
+		samples = GM.sample(5000)[0]
+		fig,ax_list = plt.subplots(3,1)
+		fig.set_size_inches(20,20)
+		ax_list[0].hist(state_1,bins=70)
+		ax_list[1].hist(state_2,bins=70)
+		lnspc_1 = np.linspace(state_1.min(),state_1.max(),y.shape[0])
+		gauss_1 = stats.norm.pdf(lnspc_1, mean_1, std_1)
+		lnspc_2 = np.linspace(state_2.min(),state_2.max(),y.shape[0])
+		gauss_2 = stats.norm.pdf(lnspc_2, mean_2, std_2)
+		ax_list[0].plot(lnspc_1,gauss_1)
+		ax_list[1].plot(lnspc_2,gauss_2)
+		ax_list[0].scatter(mean_1,30)
+		ax_list[1].scatter(mean_2,30)
+		ax_list[2].hist(samples,bins=100)
+		plt.show()
+	return GM
+
+def fit_freqs(S,freqs,plot=False):
+	freqs,amps,freq_idx = get_harmonics(S,freqs,plot=plot)
+	#fig,ax = plt.subplots(1,1)
+	#fig, ax_list_ = plt.subplots(2,1)
+	#fig.set_size_inches(30,20)
+	y = S[freq_idx[0],:]
+	series = pd.Series(y)
+	#autocorrelation_plot(series)
+	#plt.show()
+	GM = fit_markov_chain(y)
+	samples = GM.sample(5)[0]
+	print(samples)
+	#y_0 = y[1:]
+	#y_grad = np.gradient(y[:-1])
+	#y_0_grad = np.gradient(y_0)
+	#state_1 = y_0_grad[np.where(y_grad < 0)]
+	#state_2 = y_0_grad[np.where(y_grad > 0)]
+	#print(state_1.shape)
+	#print(state_2.shape)
+	#ax_list_[0].hist(state_1,bins=50)
+	#ax_list_[1].hist(state_2,bins=50)
+	#plt.show()
+	#ax_list_[0].plot(y)
+	#ax_list_[1].plot(np.gradient(y))
+	#ax_list_[2].hist(np.gradient(y),bins=100)
+
+	#plt.show()
+	#ds = pd.date_range(start='1/1/2000', periods=y.shape[0], freq='D')
+	#Y = np.array([ds,y])
+	#df = pd.DataFrame(data=Y.transpose(),columns=['ds','y'])
+	#df.plot(x='ds',y='y')
+	#plt.show()
+	#m = Prophet()
+	#m.fit(df)
+	#future = m.make_future_dataframe(periods=2500)
+	#forecast = m.predict(future)
+	#print("Multipl. terms: ", forecast['multiplicative_terms'])
+	#print("Additive terms: ", forecast['additive_terms'])
+	#print(forecast.head())
+	#print(forecast.shape)
+	#forecast.yhat = forecast.yhat/forecast.trend
+	#print(dir(m))
+	#m.plot(forecast,ax=ax)
+	#plt.vlines(y.shape[0],y.min(),y.max(),color='b',linestyle='--')
+	
+	#plt.show()
+	#m.plot_components(forecast)
+	#plt.show()
 
 def fit_noise(S,freqs,plot=False):
 	D_harmonic, D_percussive = librosa.decompose.hpss(S)
@@ -337,6 +385,7 @@ def get_harmonics(S,freqs,plot=True):
 # 2. Output fourth range between current release start and when curve starts to stabilize
 def get_adsr(S,freqs,sr_,filename='File?',plot=True):
 	D_harmonic, D_percussive = librosa.decompose.hpss(S)
+	D_harmonic = librosa.core.amplitude_to_db(D_harmonic)
 	means = np.mean(D_harmonic,axis=0)
 	grad = np.gradient(means)
 	# Total variance and rolling variance

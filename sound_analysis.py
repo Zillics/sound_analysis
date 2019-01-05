@@ -89,8 +89,8 @@ def main():
 			attack,sustain,release = utils.get_adsr(S,freqs,sr,filename=filepath,plot=False)#args.plot)
 			# Take a look at sustain part
 			S_sustain = S[:,sustain[0]:sustain[1]]
-			utils.plot_freqs(S_sustain,freqs)
-			#utils.fit_freqs(S_sustain,freqs,plot=args.plot)
+			#utils.plot_freqs(S_sustain,freqs)
+			utils.fit_freqs(S_sustain,freqs,plot=args.plot)
 		else:
 			raise Exception("--load_file argument missing!")
 	if(args.adsr):
