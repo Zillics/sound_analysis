@@ -18,6 +18,7 @@ import librosa.onset
 import time
 import soundfile as sf
 from fbprophet import Prophet
+import math
 
 sns.set()
 sns.set_style("whitegrid", {'axes.grid' : False})
@@ -130,19 +131,21 @@ def fit_markov_chain(y,plot=False):
 	grad_1 = np.gradient(y_1)
 	state_1 = grad_1[np.where(grad_0 < 0)] # instances where previous gradient was negative
 	state_2 = grad_1[np.where(grad_0 > 0)] # instances where previous gradient was positive
-	mean_1,std_1 = stats.norm.fit(state_1)
-	mean_2,std_2 = stats.norm.fit(state_2)
+	mean_1,_ = stats.norm.fit(state_1)
+	mean_2,_ = stats.norm.fit(state_2)
+	std_1 = state_1.max()
 	# Reshaping parameters to be suitable for sklearn.GaussianMixture
-	means = np.array([mean_1,mean_2])
+	means = np.array([mean_1,-mean_1])
 	means = means.reshape(2,1)
-	y_GM = np.concatenate((state_2.reshape(-1,1),state_1.reshape(-1,1)))
-	precisions =  [1/(std_1**2),1/(std_2**2)]	
+	#y_GM = np.concatenate((state_2.reshape(-1,1),state_1.reshape(-1,1)))
+	#precisions =  [1/(std_1),1/(std_2)]	
 	GM = GaussianMixture(n_components=2,covariance_type='spherical')
+	#GM.fit(y_GM)
 	GM.weights_ = [0.5,0.5]
 	GM.means_ = means
-	GM.covariances_ = [std_1,std_2]
-	GM.precisions_ = precisions
-	GM.precisions_cholesky_ = precisions	
+	GM.covariances_ = [0.1*std_1,0.1*std_1]
+	GM.precisions_ = [1/GM.covariances_[0],1/GM.covariances_[0]]
+	GM.precisions_cholesky_ = GM.precisions_	
 	GM.converged_ = True
 	if(plot):
 		samples = GM.sample(5000)[0]
@@ -151,9 +154,9 @@ def fit_markov_chain(y,plot=False):
 		ax_list[0].hist(state_1,bins=70)
 		ax_list[1].hist(state_2,bins=70)
 		lnspc_1 = np.linspace(state_1.min(),state_1.max(),y.shape[0])
-		gauss_1 = stats.norm.pdf(lnspc_1, mean_1, std_1)
+		gauss_1 = stats.norm.pdf(lnspc_1, GM.means_[0], math.sqrt(GM.covariances_[0]))
 		lnspc_2 = np.linspace(state_2.min(),state_2.max(),y.shape[0])
-		gauss_2 = stats.norm.pdf(lnspc_2, mean_2, std_2)
+		gauss_2 = stats.norm.pdf(lnspc_2, GM.means_[1], math.sqrt(GM.covariances_[1]))
 		ax_list[0].plot(lnspc_1,gauss_1)
 		ax_list[1].plot(lnspc_2,gauss_2)
 		ax_list[0].scatter(mean_1,30)
@@ -162,54 +165,44 @@ def fit_markov_chain(y,plot=False):
 		plt.show()
 	return GM
 
+def GM_generate(GM,init_samples,n_samples=1):
+	alpha = 5 # Hyperparameter, needs to be tuned
+	y_gen = []
+	mean = init_samples.mean()
+	n_mean = init_samples.shape[0]
+	for i in range(n_samples):
+		print("mean: ", mean)
+		weight  = 1 / (1 + math.exp(-mean*alpha))
+		print("weight: ",weight)
+		weights = [1-weight,weight]
+		GM.weights_ = weights
+		generated_sample = GM.sample(1)[0][0][0]
+		print("sample: ", generated_sample)
+		y_gen.append(generated_sample)
+		prev_values = np.array(y_gen[-n_mean:])
+		mean = prev_values.mean()
+
+	return np.array(y_gen)
+
+
 def fit_freqs(S,freqs,plot=False):
 	freqs,amps,freq_idx = get_harmonics(S,freqs,plot=plot)
-	#fig,ax = plt.subplots(1,1)
-	#fig, ax_list_ = plt.subplots(2,1)
-	#fig.set_size_inches(30,20)
-	y = S[freq_idx[0],:]
-	series = pd.Series(y)
-	#autocorrelation_plot(series)
-	#plt.show()
-	GM = fit_markov_chain(y)
-	samples = GM.sample(5)[0]
-	print(samples)
-	#y_0 = y[1:]
-	#y_grad = np.gradient(y[:-1])
-	#y_0_grad = np.gradient(y_0)
-	#state_1 = y_0_grad[np.where(y_grad < 0)]
-	#state_2 = y_0_grad[np.where(y_grad > 0)]
-	#print(state_1.shape)
-	#print(state_2.shape)
-	#ax_list_[0].hist(state_1,bins=50)
-	#ax_list_[1].hist(state_2,bins=50)
-	#plt.show()
-	#ax_list_[0].plot(y)
-	#ax_list_[1].plot(np.gradient(y))
-	#ax_list_[2].hist(np.gradient(y),bins=100)
-
-	#plt.show()
-	#ds = pd.date_range(start='1/1/2000', periods=y.shape[0], freq='D')
-	#Y = np.array([ds,y])
-	#df = pd.DataFrame(data=Y.transpose(),columns=['ds','y'])
-	#df.plot(x='ds',y='y')
-	#plt.show()
-	#m = Prophet()
-	#m.fit(df)
-	#future = m.make_future_dataframe(periods=2500)
-	#forecast = m.predict(future)
-	#print("Multipl. terms: ", forecast['multiplicative_terms'])
-	#print("Additive terms: ", forecast['additive_terms'])
-	#print(forecast.head())
-	#print(forecast.shape)
-	#forecast.yhat = forecast.yhat/forecast.trend
-	#print(dir(m))
-	#m.plot(forecast,ax=ax)
-	#plt.vlines(y.shape[0],y.min(),y.max(),color='b',linestyle='--')
-	
-	#plt.show()
-	#m.plot_components(forecast)
-	#plt.show()
+	for i in range(freq_idx.shape[0]):
+		y = S[freq_idx[i],:]
+		grad_y = np.gradient(y)
+		series = pd.Series(y)
+		GM = fit_markov_chain(y,plot=True)
+		GM.weights_ = [0.5,0.5]
+		init_samples = grad_y[-20:]
+		y_gen = GM_generate(GM,init_samples,10000)
+		series = pd.Series(np.concatenate((np.array([y[-1]]),y_gen)))
+		cumsum = series.cumsum()
+		y_all = np.concatenate((y,cumsum.values))
+		fig, ax_list_ = plt.subplots(2,1)
+		fig.set_size_inches(30,20)
+		ax_list_[0].plot(y)
+		ax_list_[1].plot(y_all)
+		plt.show()
 
 def fit_noise(S,freqs,plot=False):
 	D_harmonic, D_percussive = librosa.decompose.hpss(S)
